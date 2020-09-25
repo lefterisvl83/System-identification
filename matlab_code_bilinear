@@ -1,3 +1,6 @@
+% =============Identification of Bilinear Systems=====================
+% =====  x_{t+1} = Ax_{t} + Bu_{t} + N(u_{t} \otimes x_{t})  =========
+%=====================================================================
 % clear workspace
 clear all
 clc
@@ -9,7 +12,7 @@ p = 500;        % number of snapshots (xt, ut)
 % data
 scale_a = 2;    % scaling factor for matrix A
 scale_b = 10;   % scaling factor for matrix B
-scale_nn = .01;
+scale_nn = .01; % scaling factor for matrix N
 a = scale_a*rand(n,n);
 max_eig_a = max(eig(a));
 a = a/(2*max_eig_a); % stable (and positive) matrix A: max(eig(A)) < 1
