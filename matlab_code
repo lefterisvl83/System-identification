@@ -1,0 +1,108 @@
+% clear workspace
+clear all
+clc
+close all
+% dimensions
+n = 5;          % state dimension
+m = 3;          % input dimension
+p = 500;        % number of snapshots (xt, ut)
+% data
+scale_a = 2;    % scaling factor for matrix A
+scale_b = 10;   % scaling factor for matrix B
+scale_nn = .01;
+a = scale_a*rand(n,n);
+max_eig_a = max(eig(a));
+a = a/(2*max_eig_a); % stable (and positive) matrix A: max(eig(A)) < 1
+b = scale_b*rand(n,m); % matrix B
+nn = scale_nn*rand(n,n*m); % matrix N
+%
+x0 = 5*rand(n,1);                % initial condition
+%
+u = wgn(m,p,1);                 % generate input white noise
+%
+xvec = zeros(n,p+1); % initialize sequence of state vectors
+xvec(:,1) = x0;
+y = zeros(n*m,p);  % initialize sequence of yi = ui \otimes xi
+% 
+% substitute negative input by positive
+i = 0; j = 0;
+for i = 1:m
+    for j = 1:p
+        if u(i,j) < 0
+            u(i,j) = -u(i,j);
+        end
+    end
+end
+%
+i = 0;
+% initialize trajectory
+xvec(:,1) = (a+nn*(kron(u(:,1),eye(n))))*x0 + b*u(:,1);
+% simulate system for given inputs and initial condition
+for i = 2:(p+1)
+    xvec(:,i) = (a+nn*(kron(u(:,i-1),eye(n))))*xvec(:,i-1) + b*u(:,i-1);
+end
+%
+% add measurement noise
+xvec = xvec + 1*randn(size(xvec))/100;
+% construct (noisy) signal (u \otimes x)
+j = 0;
+for j = 1:p
+    y(:,j) = kron(u(:,j),xvec(:,j));
+end
+%
+xvec_t = xvec(:,1:p);
+xvec_tplus1 = xvec(:,2:p+1);
+%
+% system state sequence Xt: xvec_t
+% system state sequence Xt+1: xvec_tplus1
+% system input sequence U: u
+% input-state product sequence Y: (u \otimes x)
+% Xt+1 = AXt + BU + NY = [A B N][X; U; Y] = G*omega, 
+% where G = [A B N] (to be found) and omega = [X; U; Y]
+% 
+% -------------- Results ------------------------
+%
+% LS without positivity constraints
+omega = [xvec_t ; u ; y];
+G = xvec_tplus1*pinv(omega);
+a_matrix_no_constraints = G(1:n,1:n); % approximation of matrix A
+b_matrix_no_constraints = G(1:n,n+1:n+m); % approximation of matrix B
+nn_matrix_no_constraints = G(1:n,n+m+1:n+m+n*m);% approximation of matrix N
+%
+% LS with positivity constraints (using `lsqlin` and `fmincon`)
+% --------------- note -------------------
+% lsqlin: computes least-squares with linear constraints
+%       : it uses a vector argument (doesn't admit matrices)
+%       : thus ||A*B*C - D||_2 with argument B is not correct 
+%       : since B is matrix. 
+%       : since G
+%
+[state_size, sequence_length] = size(xvec_tplus1);
+%
+% g = [vec(A)' vec(B)']'
+g = lsqlin(kron(omega',eye(n)),...
+    reshape(xvec_tplus1,n*p,1),...
+    -eye(n*length(omega(:,1))),...
+    zeros(n*length(omega(:,1)),1));
+% gg = vec^-1(g) is a nx(n+m) matrix
+gg = reshape(g,n,n+m+n*m);
+a_matrix_constraints = gg(1:n,1:n); % approximation of matrix A
+b_matrix_constraints = gg(1:n,n+1:n+m); % approximation of matrix B
+nn_matrix_constraints = gg(1:n,n+m+1:n+m+n*m); % approximation of matrix N
+%
+ggg = fmincon(@(x) norm(x*omega-xvec_tplus1,'fro'),gg,...
+    [],[],[],[],zeros(n,n+m+n*m),[]);
+% print results
+%
+fprintf("original data:\n")
+[a b nn]
+fprintf("approximation without constraints\n error: %.4f", norm([a b nn]-G,2))
+G
+fprintf("least-squares with constraints\n error: %.4f", norm([a b nn]-gg,2))
+gg
+fprintf("fmincon with constraints\n error: %.4f", norm([a b nn]-ggg,2))
+ggg
+
+
+
+
